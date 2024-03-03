@@ -23,36 +23,39 @@ def adjust_mask_within_boundary(defect_mask, boundary_mask):
 
 def paste_defect_on_normal_with_constraints(normal_image, defect_image, defect_mask, boundary_mask, operation, params, num_augmentations):
     result_images = []
+    result_masks = []  # 변형된 마스크를 저장할 리스트 추가
 
     for _ in tqdm(range(num_augmentations), desc="Generating images"):
         result_image = normal_image.copy()
-        
+        current_defect_image = defect_image
+        current_defect_mask = defect_mask
+
+        # Translation 적용
         if operation == 'translate' or operation == 'both':
-            # Translation을 위한 랜덤 offset 생성
             x_offset = random.randint(params['min_x_offset'], params['max_x_offset'])
             y_offset = random.randint(params['min_y_offset'], params['max_y_offset'])
-            translated_defect_image = translate_image(defect_image, x_offset, y_offset, result_image.shape[1], result_image.shape[0])
-            translated_defect_mask = translate_image(defect_mask, x_offset, y_offset, result_image.shape[1], result_image.shape[0])
+            current_defect_image = translate_image(defect_image, x_offset, y_offset, result_image.shape[1], result_image.shape[0])
+            current_defect_mask = translate_image(defect_mask, x_offset, y_offset, result_image.shape[1], result_image.shape[0])
 
+        # Rotation 적용
         if operation == 'rotate' or operation == 'both':
             angle = random.randint(params['min_rotation'], params['max_rotation'])
-            # 올바르게 두 개의 값을 받는지 확인
-            rotated_defect_image, rotated_defect_mask = rotate_image(defect_image, defect_mask, angle, result_image.shape[1], result_image.shape[0])
-            defect_image, defect_mask = rotated_defect_image, rotated_defect_mask
+            current_defect_image, current_defect_mask = rotate_image(current_defect_image, current_defect_mask, angle, result_image.shape[1], result_image.shape[0])
 
-        # 경계를 벗어나는지 체크
-        if not is_within_boundary(translated_defect_mask, boundary_mask):
-            # 경계 내에 있는 영역만 사용
-            translated_defect_mask = adjust_mask_within_boundary(translated_defect_mask, boundary_mask)
+        # 경계를 벗어나는지 체크하고 조정
+        if not is_within_boundary(current_defect_mask, boundary_mask):
+            # 경계 내에 있는 영역만 사용하거나 조정
+            continue  # 또는 적절한 조정 로직 적용
 
-        # 결함 이미지 적용
-        alpha_mask = translated_defect_mask / 255.0
+        # 결함 이미지와 마스크 적용
+        alpha_mask = current_defect_mask / 255.0
         for c in range(3):
-            result_image[:, :, c] = translated_defect_image[:, :, c] * alpha_mask + result_image[:, :, c] * (1 - alpha_mask)
+            result_image[:, :, c] = current_defect_image[:, :, c] * alpha_mask + result_image[:, :, c] * (1 - alpha_mask)
 
         result_images.append(result_image)
+        result_masks.append(current_defect_mask)  # 변형된 마스크 저장
 
-    return result_images
+    return result_images, result_masks  # 이미지와 마스크 모두 반환
 
 def translate_image(image, x_offset, y_offset, max_width, max_height):
     rows, cols = image.shape[:2]
@@ -67,7 +70,6 @@ def rotate_image(image, mask, angle, max_width, max_height):
     rotated_image = cv2.warpAffine(image, M, (cols, rows))
     rotated_mask = cv2.warpAffine(mask, M, (mask.shape[1], mask.shape[0]))
     return rotated_image, rotated_mask
-
 
 # Translation 예시
 # translated_image = paste_defect_on_normal_with_constraints(
@@ -101,12 +103,21 @@ augmentation_params = {
     'min_rotation': -45, 'max_rotation': 45
 }
 
+# augmented_images = paste_defect_on_normal_with_constraints(
+#     normal_image, defect_image, defect_mask, boundary_mask,
+#     'both', augmentation_params, num_augmentations=10
+# )
+
 # 데이터 증강 및 결과 저장
-augmented_images = paste_defect_on_normal_with_constraints(
+augmented_images, augmented_masks = paste_defect_on_normal_with_constraints(
     normal_image, defect_image, defect_mask, boundary_mask,
-    'both', augmentation_params, num_augmentations=10
+    'both', augmentation_params, num_augmentations=100
 )
 
 results_path = create_results_directory()
-for i, img in enumerate(augmented_images):
+
+for i, (img, mask) in enumerate(zip(augmented_images, augmented_masks)):
     cv2.imwrite(os.path.join(results_path, f'augmented_image_{i}.png'), img)
+    # 마스크는 그레이스케일 이미지로 저장
+    cv2.imwrite(os.path.join(results_path, f'augmented_mask_{i}.png'), mask)
+
