@@ -54,7 +54,7 @@ def paste_defect_on_normal_with_constraints(normal_image, defect_image, defect_m
 
         result_images.append(result_image)
         result_masks.append(current_defect_mask)  # 변형된 마스크 저장
-
+ 
     return result_images, result_masks  # 이미지와 마스크 모두 반환
 
 def translate_image(image, x_offset, y_offset, max_width, max_height):
